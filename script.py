@@ -4,10 +4,15 @@ from autogen import AssistantAgent, UserProxyAgent, GroupChat, GroupChatManager,
 from autogen.agentchat.contrib.gpt_assistant_agent import GPTAssistantAgent
 import json
 from dotenv import load_dotenv
-import l
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+from langchain.prompts import PromptTemplate
+from langchain.chains.summarize import load_summarize_chain
+from bs4 import BeautifulSoup
+from langchain.chat_models import ChatOpenAI
 
 load_dotenv()
 serper_api_key = os.getenv("SERPER_API_KEY")
+browserless_api_key = os.getenv("BROWSERLESS_API_KEY")
 
 #Functions
 #Google search function
@@ -29,7 +34,7 @@ def google_search(search_keyword):
 
 #summary function
 def summary(objective, content):
-    llm = ChatOpenAI(temperature = 0, model = "gpt-3.5-turbo-16k-0613")
+    llm = ChatOpenAI(temperature = 0, model = "gpt-3.5-turbo-1106")
 
     text_splitter = RecursiveCharacterTextSplitter(separators=["\n\n", "\n"], chunk_size = 10000, chunk_overlap=500)
     docs = text_splitter.create_documents([content])
@@ -74,7 +79,7 @@ def web_scraping(objective: str, url: str):
     data_json = json.dumps(data)
 
     # Send the POST request
-    response = requests.post(f"https://chrome.browserless.io/content?token={brwoserless_api_key}", headers=headers, data=data_json)
+    response = requests.post(f"https://chrome.browserless.io/content?token={browserless_api_key}", headers=headers, data=data_json)
     
     # Check the response status code
     if response.status_code == 200:
@@ -94,7 +99,7 @@ def web_scraping(objective: str, url: str):
 config_list_gpt35 = config_list_from_dotenv(
     dotenv_file_path='.env',
     filter_dict={
-        "model": ["gpt-3.5-turbo"],
+        "model": ["gpt-3.5-turbo-1106"],
     },
 )
 
@@ -121,18 +126,18 @@ gpt35_config = {
 }
 
 user_proxy = UserProxyAgent(
-   name="Admin",
-   system_message="A human admin. Interact with the planner to discuss the plan. Plan execution needs to be approved by this admin.",
+   name="User_Proxy",
+   system_message="A user proxy. Interact with the planner to discuss the plan. Plan execution needs to be approved by this admin.",
    code_execution_config=False,
+#    human_input_mode="Always",
+#    max_consecutive_auto_reply=1,
+#    is_termination_msg=lambda msg: "TERMINATE" in msg["content"]
 ) 
 
-#Could also try AssistantAgent as well
-researcher = GPTAssistantAgent(
+#Could also try GPTAssistantAgent as well if we use the OpenAI interface
+researcher = AssistantAgent(
     name="Researcher",
-    llm_config = { 
-        config_list_gpt35,
-        #"assistant_id": ""   This can be used in conjunction with OpenAI if we want to give prompts to the models within the OpenAI interface
-    },
+    llm_config = config_list_gpt35,   
     system_message='''You are a world class reseacher who can do detailed research on any topic and produce fact based results. You do not make things up. You will try as hard as possible to gather facts and data to back up the research. 
     Please make sure you complete the objective above with the following rules:
     1. You should do enough research to gather as much information as possible about the objective.
@@ -146,11 +151,12 @@ researcher = GPTAssistantAgent(
 
 researcher.register_function(
     function_map={
-        ""
+        "Web_scraping": web_scraping,
+        "google_search": google_search
     }
 )
 
-research_manager = GPTAssistantAgent(
+research_manager = AssistantAgent(
     name="research_manager",
     system_message='''You are a research manager. You are harsh and relentless. You will first try to generate 2 actions a researcher can take to find the information needed. Try to avoid linkedin, or other gated websites that don't allow scraping. You will review the result from the researcher, and always push back if the researcher didn't find the information. Be persistent. For example, if the researcher does not find the correct information, say, "No, you have to find the information. Try again.", and propose another method to try if the researcher can't find an answer. Only after the researcher has found the information will you say, 'TERMINATE'.
 ''',
@@ -176,7 +182,7 @@ research_manager = GPTAssistantAgent(
 #     }
 # )
 
-groupchat = GroupChat(agents=[user_proxy, researcher, research_manager], messages=[], max_round=3)
+groupchat = GroupChat(agents=[user_proxy, researcher, research_manager], messages=[], max_round=10)
 
 # Another option to try
 # director = GPTAssistantAgent(
@@ -186,12 +192,17 @@ groupchat = GroupChat(agents=[user_proxy, researcher, research_manager], message
 
 # user_proxy.initiate_chat(director, message=message)
 
-manager = GroupChatManager(
-    groupchat=groupchat, 
-    llm_config=config_list_gpt35
-)
+# manager = GroupChatManager(
+#     groupchat=groupchat, 
+#     llm_config=config_list_gpt35
+# )
+
+# user_proxy.initiate_chat(
+#     manager,
+#     message = """Find articles on a physical therapy exercise plan for patients who are one day out from ACL surgery. What exercises should that patient be doing within the first two weeks and then 8 weeks."""
+# )
 
 user_proxy.initiate_chat(
-    manager,
+    researcher,
     message = """Find articles on a physical therapy exercise plan for patients who are one day out from ACL surgery. What exercises should that patient be doing within the first two weeks and then 8 weeks."""
 )
