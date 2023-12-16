@@ -1,6 +1,6 @@
 import os
 import requests
-from autogen import AssistantAgent, UserProxyAgent, GroupChat, GroupChatManager, config_list_from_dotenv
+from autogen import AssistantAgent, UserProxyAgent, GroupChat, GroupChatManager, config_list_from_json
 from autogen.agentchat.contrib.gpt_assistant_agent import GPTAssistantAgent
 import json
 from dotenv import load_dotenv
@@ -13,6 +13,7 @@ from langchain.chat_models import ChatOpenAI
 load_dotenv()
 serper_api_key = os.getenv("SERPER_API_KEY")
 browserless_api_key = os.getenv("BROWSERLESS_API_KEY")
+config_list = config_list_from_json("OAI_CONFIG_LIST")
 
 #Functions
 #Google search function
@@ -96,20 +97,20 @@ def web_scraping(objective: str, url: str):
 
 
 #use this config_list for gpt 3.5
-config_list_gpt35 = config_list_from_dotenv(
-    dotenv_file_path='.env',
+config_list_gpt35 = config_list_from_json(
+    env_or_file="OAI_CONFIG_LIST",
     filter_dict={
-        "model": ["gpt-3.5-turbo-1106"],
+        "model": {"gpt-3.5-turbo-1106"},
     },
 )
 
 #use this config_list for gpt 4
-config_list_gpt4 = config_list_from_dotenv(
-    dotenv_file_path='.env',
-    filter_dict={
-        "model": ["gpt-4"],
-    },
-)
+# config_list_gpt4 = config_list_from_dotenv(
+#     dotenv_file_path='.env',
+#     filter_dict={
+#         "model": {"gpt-4"},
+#     },
+# )
 
 
 #assistant = AssistantAgent("assistant", llm_config={"config_list": config_list})
@@ -118,12 +119,15 @@ config_list_gpt4 = config_list_from_dotenv(
 # This initiates an automated chat between the two agents to solve the task
 #construct agents
 
-gpt35_config = {
-    "cache_seed": 42,  # change the cache_seed for different trials
-    "temperature": 0,
-    "config_list": config_list_gpt35,
-    "timeout": 120,
-}
+assistant_one = AssistantAgent(
+    name="3.5-assistant",
+    llm_config={
+       "cache_seed": 42,  # change the cache_seed for different trials
+        "temperature": 0,
+        "config_list": config_list_gpt35,
+        "timeout": 120, 
+    },
+)
 
 user_proxy = UserProxyAgent(
    name="User_Proxy",
@@ -137,7 +141,7 @@ user_proxy = UserProxyAgent(
 #Could also try GPTAssistantAgent as well if we use the OpenAI interface
 researcher = AssistantAgent(
     name="Researcher",
-    llm_config = config_list_gpt35,   
+    llm_config = {"config_list": config_list},   
     system_message='''You are a world class reseacher who can do detailed research on any topic and produce fact based results. You do not make things up. You will try as hard as possible to gather facts and data to back up the research. 
     Please make sure you complete the objective above with the following rules:
     1. You should do enough research to gather as much information as possible about the objective.
@@ -160,7 +164,8 @@ research_manager = AssistantAgent(
     name="research_manager",
     system_message='''You are a research manager. You are harsh and relentless. You will first try to generate 2 actions a researcher can take to find the information needed. Try to avoid linkedin, or other gated websites that don't allow scraping. You will review the result from the researcher, and always push back if the researcher didn't find the information. Be persistent. For example, if the researcher does not find the correct information, say, "No, you have to find the information. Try again.", and propose another method to try if the researcher can't find an answer. Only after the researcher has found the information will you say, 'TERMINATE'.
 ''',
-    llm_config=config_list_gpt35,
+    llm_config={"config_list": config_list},
+    
 )
 
 # Create director agent
@@ -192,17 +197,17 @@ groupchat = GroupChat(agents=[user_proxy, researcher, research_manager], message
 
 # user_proxy.initiate_chat(director, message=message)
 
-# manager = GroupChatManager(
-#     groupchat=groupchat, 
-#     llm_config=config_list_gpt35
-# )
-
-# user_proxy.initiate_chat(
-#     manager,
-#     message = """Find articles on a physical therapy exercise plan for patients who are one day out from ACL surgery. What exercises should that patient be doing within the first two weeks and then 8 weeks."""
-# )
+manager = GroupChatManager(
+    groupchat=groupchat, 
+    llm_config={"config_list": config_list}
+)
 
 user_proxy.initiate_chat(
-    researcher,
-    message = """Find articles on a physical therapy exercise plan for patients who are one day out from ACL surgery. What exercises should that patient be doing within the first two weeks and then 8 weeks."""
+    manager,
+    message = """What physical therapy exercises should a patient perform for the next 8 weeks one day out from ACL surgery based on the clinical practice guidelines?"""
 )
+
+# user_proxy.initiate_chat(
+#     researcher,
+#     message = """Find articles on a physical therapy exercise plan for patients who are one day out from ACL surgery. What exercises should that patient be doing within the first two weeks and then 8 weeks."""
+# )
